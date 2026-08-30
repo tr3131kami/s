@@ -5,11 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>P2P Secure Share</title>
   
-  <!-- PeerJS & QRCode ライブラリ -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   
-  <!-- Google Material Symbols (アイコン) -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
   
   <style>
@@ -50,7 +48,7 @@
     button:disabled { background-color: #dadce0; cursor: not-allowed; color: #80868b; }
     .secondary-btn { background-color: #f1f3f4; color: #3c4043; }
     .secondary-btn:hover { background-color: #e8eaed; }
-    .danger-btn { background-color: #ea4335; }
+    .danger-btn { background-color: #ea4335; color: white; }
     .danger-btn:hover { background-color: #c5221f; }
 
     #qrcode { display: flex; justify-content: center; margin: 15px 0; padding: 15px; background: #fff; border-radius: 8px; }
@@ -58,7 +56,7 @@
     .timer { font-weight: bold; color: #ea4335; }
     #approval-area { background-color: #e8f0fe; border-left: 4px solid #1a73e8; }
     
-    .status-text { font-weight: bold; color: #34a853; display: flex; align-items: center; gap: 5px; }
+    .status-text { font-weight: bold; color: #202124; display: flex; align-items: center; gap: 5px; }
     .download-link {
       display: flex; align-items: center; gap: 8px; margin-top: 15px; padding: 12px;
       background-color: #e6f4ea; color: #137333; text-decoration: none;
@@ -70,14 +68,12 @@
 
   <h2><span class="material-symbols-outlined">folder_shared</span> セキュアファイル共有</h2>
 
-  <!-- 1. デバイス設定 & 待機 -->
   <div class="card" id="setup-card">
     <h3><span class="material-symbols-outlined">devices</span> 自分のデバイス設定</h3>
-    <input type="text" id="device-name" placeholder="例: かなとのスマホ">
+    <input type="text" id="device-name" placeholder="例: 自分のスマホ">
     <button id="start-btn"><span class="material-symbols-outlined">cell_tower</span> 公開を開始する (10分間有効)</button>
   </div>
 
-  <!-- 2. 待機中（QRコード・パスワード表示） -->
   <div class="card" id="wait-card" style="display: none;">
     <h3><span class="material-symbols-outlined">lock_open</span> 接続の受付中</h3>
     <p>有効期限: <span id="timer" class="timer">10:00</span></p>
@@ -86,14 +82,12 @@
     <button id="stop-btn" class="secondary-btn"><span class="material-symbols-outlined">cancel</span> 公開を停止</button>
   </div>
 
-  <!-- 3. 他のデバイスへ接続（受信側） -->
   <div class="card">
     <h3><span class="material-symbols-outlined">login</span> 他のデバイスに接続</h3>
     <input type="text" id="input-passcode" maxlength="6" placeholder="6桁のパスコードを入力">
     <button id="connect-btn"><span class="material-symbols-outlined">sensors</span> 接続をリクエスト</button>
   </div>
 
-  <!-- 4. 承認ダイアログ（送信側） -->
   <div class="card" id="approval-area" style="display: none;">
     <h3><span class="material-symbols-outlined">notification_important</span> 接続リクエスト</h3>
     <p><strong id="requester-name">未知のデバイス</strong> から接続要求が届きました。</p>
@@ -101,7 +95,6 @@
     <button id="reject-btn" class="danger-btn"><span class="material-symbols-outlined">block</span> 拒否</button>
   </div>
 
-  <!-- 5. ファイル共有エリア -->
   <div class="card">
     <h3><span class="material-symbols-outlined">cloud_upload</span> ファイル共有</h3>
     <p class="status-text"><span class="material-symbols-outlined" id="status-icon">sync_disabled</span> <span id="status">未接続</span></p>
@@ -111,118 +104,203 @@
   </div>
 
   <script>
-    let peer = null; let conn = null; let currentPasscode = ''; let timerInterval = null; let pendingConnection = null;
+    let peer = null;
+    let conn = null;
+    let timerInterval = null;
+    let pendingConnection = null;
 
-    const setupCard = document.getElementById('setup-card'); const waitCard = document.getElementById('wait-card');
-    const deviceNameInput = document.getElementById('device-name'); const startBtn = document.getElementById('start-btn');
-    const stopBtn = document.getElementById('stop-btn'); const displayPasscode = document.getElementById('display-passcode');
-    const timerEl = document.getElementById('timer'); const qrcodeEl = document.getElementById('qrcode');
-    const inputPasscode = document.getElementById('input-passcode'); const connectBtn = document.getElementById('connect-btn');
-    const approvalArea = document.getElementById('approval-area'); const requesterNameEl = document.getElementById('requester-name');
-    const acceptBtn = document.getElementById('accept-btn'); const rejectBtn = document.getElementById('reject-btn');
-    const statusEl = document.getElementById('status'); const statusIcon = document.getElementById('status-icon');
-    const fileInput = document.getElementById('file-input'); const sendBtn = document.getElementById('send-btn');
+    const setupCard = document.getElementById('setup-card');
+    const waitCard = document.getElementById('wait-card');
+    const deviceNameInput = document.getElementById('device-name');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const displayPasscode = document.getElementById('display-passcode');
+    const timerEl = document.getElementById('timer');
+    const qrcodeEl = document.getElementById('qrcode');
+    const inputPasscode = document.getElementById('input-passcode');
+    const connectBtn = document.getElementById('connect-btn');
+    const approvalArea = document.getElementById('approval-area');
+    const requesterNameEl = document.getElementById('requester-name');
+    const acceptBtn = document.getElementById('accept-btn');
+    const rejectBtn = document.getElementById('reject-btn');
+    const statusEl = document.getElementById('status');
+    const statusIcon = document.getElementById('status-icon');
+    const fileInput = document.getElementById('file-input');
+    const sendBtn = document.getElementById('send-btn');
     const downloadArea = document.getElementById('download-area');
 
+    // URLパラメータのチェック（QRコード読み取り用）
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('pass')) inputPasscode.value = urlParams.get('pass');
     };
 
+    // ステータス表示更新関数
     function updateStatus(text, icon, color = '#202124') {
       statusEl.textContent = text;
       statusIcon.textContent = icon;
       statusEl.parentNode.style.color = color;
     }
 
+    // 1. 「公開を開始」ボタンを押したとき（送信待機側）
     startBtn.addEventListener('click', () => {
-      const devName = deviceNameInput.value.trim() || '名無しデバイス';
-      currentPasscode = Math.floor(100000 + Math.random() * 900000).toString();
-      peer = new Peer('app-share-' + currentPasscode);
+      const passcode = Math.floor(100000 + Math.random() * 900000).toString();
+      peer = new Peer('app-share-' + passcode);
 
       peer.on('open', () => {
-        setupCard.style.display = 'none'; waitCard.style.display = 'block';
-        displayPasscode.textContent = currentPasscode;
+        setupCard.style.display = 'none';
+        waitCard.style.display = 'block';
+        displayPasscode.textContent = passcode;
         qrcodeEl.innerHTML = '';
-        new QRCode(qrcodeEl, { text: `${window.location.origin}${window.location.pathname}?pass=${currentPasscode}`, width: 150, height: 150 });
+        new QRCode(qrcodeEl, { text: `${window.location.origin}${window.location.pathname}?pass=${passcode}`, width: 150, height: 150 });
         startTimer(600);
       });
 
+      // 受信要求が来たとき
       peer.on('connection', (connection) => {
         pendingConnection = connection;
         connection.on('data', (data) => {
           if (data.type === 'handshake') {
             requesterNameEl.textContent = data.deviceName || '未知のデバイス';
             approvalArea.style.display = 'block';
-          } else { handleData(data); }
+          } else {
+            handleData(data);
+          }
         });
+      });
+
+      peer.on('error', (err) => {
+        alert('接続エラーが発生しました: ' + err.type);
+        resetState();
       });
     });
 
+    // 承認ボタン
     acceptBtn.addEventListener('click', () => {
       if (!pendingConnection) return;
-      conn = pendingConnection; approvalArea.style.display = 'none'; stopPublishing();
-      conn.send({ type: 'accept' }); setupActiveConnection();
+      conn = pendingConnection;
+      approvalArea.style.display = 'none';
+      
+      // タイマーだけ停止（通信は切らない！）
+      clearInterval(timerInterval);
+      waitCard.style.display = 'none';
+
+      // 相手に「承認OK」を送る
+      conn.send({ type: 'accept' });
+      setupActiveConnection();
     });
 
+    // 拒否ボタン
     rejectBtn.addEventListener('click', () => {
-      if (pendingConnection) { pendingConnection.send({ type: 'reject' }); pendingConnection.close(); pendingConnection = null; }
+      if (pendingConnection) {
+        pendingConnection.send({ type: 'reject' });
+        pendingConnection.close();
+        pendingConnection = null;
+      }
       approvalArea.style.display = 'none';
     });
 
-    function stopPublishing() {
-      clearInterval(timerInterval); if (peer) peer.destroy();
-      waitCard.style.display = 'none'; setupCard.style.display = 'block';
-    }
-    stopBtn.addEventListener('click', stopPublishing);
+    // 公開停止ボタン
+    stopBtn.addEventListener('click', resetState);
 
+    function resetState() {
+      clearInterval(timerInterval);
+      if (peer) peer.destroy();
+      waitCard.style.display = 'none';
+      setupCard.style.display = 'block';
+      updateStatus('未接続', 'sync_disabled');
+    }
+
+    // 10分タイマー
     function startTimer(seconds) {
       let timeLeft = seconds;
       timerInterval = setInterval(() => {
         timeLeft--;
         timerEl.textContent = `${Math.floor(timeLeft / 60).toString().padStart(2, '0')}:${(timeLeft % 60).toString().padStart(2, '0')}`;
-        if (timeLeft <= 0) { alert('有効期限が切れました'); stopPublishing(); }
+        if (timeLeft <= 0) {
+          alert('有効期限が切れました');
+          resetState();
+        }
       }, 1000);
     }
 
+    // 2. 「接続をリクエスト」ボタンを押したとき（受信側）
     connectBtn.addEventListener('click', () => {
-      const code = inputPasscode.value.trim(); const myName = deviceNameInput.value.trim() || '名無しデバイス';
+      const code = inputPasscode.value.trim();
+      const myName = deviceNameInput.value.trim() || '名無しデバイス';
       if (code.length !== 6) return alert('6桁のパスコードを入力してください');
+
+      updateStatus('相手の承認を待っています...', 'hourglass_empty', '#fbbc05');
+
       const tempPeer = new Peer();
       tempPeer.on('open', () => {
         conn = tempPeer.connect('app-share-' + code);
+
         conn.on('open', () => {
-          updateStatus('相手の承認を待っています...', 'hourglass_empty', '#fbbc05');
+          // 接続されたら自分の名前を送る
           conn.send({ type: 'handshake', deviceName: myName });
         });
+
+        // 相手からの返答を受け取る
         conn.on('data', (data) => {
-          if (data.type === 'accept') { setupActiveConnection(); }
-          else if (data.type === 'reject') { updateStatus('拒否されました', 'block', '#ea4335'); conn.close(); }
-          else { handleData(data); }
+          if (data.type === 'accept') {
+            // 承認されたら接続完了状態へ
+            setupActiveConnection();
+          } else if (data.type === 'reject') {
+            updateStatus('接続が拒否されました', 'block', '#ea4335');
+            conn.close();
+          } else {
+            handleData(data);
+          }
+        });
+
+        conn.on('error', () => {
+          updateStatus('接続に失敗しました', 'error', '#ea4335');
         });
       });
     });
 
+    // 接続完了後の共通処理（双方向で利用可能にする）
     function setupActiveConnection() {
-      updateStatus('接続完了！', 'sync', '#34a853');
-      fileInput.disabled = false; sendBtn.disabled = false;
-      conn.on('close', () => { updateStatus('切断されました', 'sync_disabled', '#ea4335'); fileInput.disabled = true; sendBtn.disabled = true; });
+      updateStatus('接続完了！ファイルを送信できます', 'sync', '#34a853');
+      fileInput.disabled = false;
+      sendBtn.disabled = false;
+
+      conn.on('close', () => {
+        updateStatus('通信が切断されました', 'sync_disabled', '#ea4335');
+        fileInput.disabled = true;
+        sendBtn.disabled = true;
+      });
     }
 
+    // 受信したデータ（ファイル）の処理
     function handleData(data) {
       if (data.file) {
-        const url = URL.createObjectURL(new Blob([data.file], { type: data.fileType }));
-        const link = document.createElement('a'); link.href = url; link.download = data.fileName; link.className = 'download-link';
+        const blob = new Blob([data.file], { type: data.fileType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = data.fileName;
+        link.className = 'download-link';
         link.innerHTML = `<span class="material-symbols-outlined">download</span> ${data.fileName} を保存`;
-        downloadArea.innerHTML = ''; downloadArea.appendChild(link);
+        
+        downloadArea.innerHTML = '';
+        downloadArea.appendChild(link);
         updateStatus('ファイルを受信しました！', 'task_alt', '#34a853');
       }
     }
 
+    // ファイル送信ボタンを押したとき
     sendBtn.addEventListener('click', () => {
-      const file = fileInput.files[0]; if (!file || !conn) return;
+      const file = fileInput.files[0];
+      if (!file || !conn) return;
+
       updateStatus('送信中...', 'cloud_upload', '#1a73e8');
-      conn.send({ file: file, fileName: file.name, fileType: file.type });
+      conn.send({
+        file: file,
+        fileName: file.name,
+        fileType: file.type
+      });
       updateStatus('送信完了！', 'check_circle', '#34a853');
     });
   </script>
