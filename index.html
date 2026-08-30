@@ -46,7 +46,7 @@
     }
     .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
 
-    /* メインコンテンツエリア */
+    /* メインエリア */
     main { flex: 1; padding: 20px; max-width: 500px; width: 100%; margin: 0 auto; box-sizing: border-box; }
 
     .card {
@@ -64,6 +64,7 @@
       width: 100%; padding: 12px; border: none; border-radius: 8px;
       background: var(--primary-color); color: white; font-size: 15px; font-weight: 500;
       cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px;
+      text-decoration: none; box-sizing: border-box;
     }
     .btn-secondary { background: #f1f3f4; color: #3c4043; }
     .btn-secondary:hover { background: #e8eaed; }
@@ -202,7 +203,7 @@
     let selectedFile = null;
     let generatedPin = '';
     let html5QrCode = null;
-    let activeDevices = {}; // オンラインの受信デバイス一覧 { peerId: { name, lastSeen } }
+    let activeDevices = {}; 
     let isReceiveMode = false;
 
     const MQTT_TOPIC = 'p2p_share_global_lobby_v2';
@@ -238,7 +239,7 @@
       panelSend.style.display = 'none'; panelReceive.style.display = 'block';
       tabReceive.classList.add('active'); tabSend.classList.remove('active');
       isReceiveMode = true;
-      sendPresenceSignal(); // 即座に待機シグナルを送信
+      sendPresenceSignal();
     });
 
     // --- 2. 設定モーダル ---
@@ -250,7 +251,7 @@
       if (isReceiveMode) sendPresenceSignal();
     });
 
-    // --- 3. MQTT公開ロビー (受信中端末の自動一覧化) ---
+    // --- 3. MQTT公開ロビー (オンラインデバイス認識) ---
     function initMqttLobby() {
       mqttClient.on('connect', () => {
         mqttClient.subscribe(MQTT_TOPIC);
@@ -266,7 +267,6 @@
         } catch (e) {}
       });
 
-      // 2秒ごとに「受信中」のシグナル送信 ＆ 期限切れデバイス削除
       setInterval(() => {
         if (isReceiveMode) sendPresenceSignal();
         renderDeviceList();
@@ -283,14 +283,13 @@
       }
     }
 
-    // デバイス一覧描画
     function renderDeviceList() {
       const now = Date.now();
       deviceListEl.innerHTML = '';
       let count = 0;
 
       for (const [id, dev] of Object.entries(activeDevices)) {
-        if (now - dev.lastSeen < 6000) { // 6秒以内にシグナルがあったデバイスのみ表示
+        if (now - dev.lastSeen < 6000) {
           count++;
           const li = document.createElement('li');
           li.className = 'device-item';
@@ -316,18 +315,22 @@
       myPeerId = 'share-dev-' + Math.floor(Math.random() * 899999 + 100000);
       peer = new Peer(myPeerId);
 
-      // 受信側として接続要求を受け取ったとき
       peer.on('connection', connection => {
         conn = connection;
         conn.on('data', data => {
           if (data.type === 'request-share') {
-            // PIN & QRコード生成
             generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
             document.getElementById('rx-requester-name').textContent = data.deviceName || '未知のデバイス';
             document.getElementById('rx-passcode').textContent = generatedPin;
             
+            // 高精度QRコード生成
             document.getElementById('qrcode').innerHTML = '';
-            new QRCode(document.getElementById('qrcode'), { text: generatedPin, width: 140, height: 140 });
+            new QRCode(document.getElementById('qrcode'), {
+              text: generatedPin,
+              width: 160,
+              height: 160,
+              correctLevel: QRCode.CorrectLevel.H
+            });
 
             rxAuthModal.style.display = 'flex';
           } else if (data.type === 'verify-pin') {
@@ -339,10 +342,15 @@
               conn.send({ type: 'auth-fail' });
             }
           } else if (data.type === 'file-transfer') {
-            // ファイル受け取り
             const blob = new Blob([data.file], { type: data.fileType });
             const url = URL.createObjectURL(blob);
-            document.getElementById('download-area').innerHTML = `<a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853;">💾 ${data.fileName} を保存する</a>`;
+            
+            // Google Material Symbols アイコンを使用した保存ボタン
+            document.getElementById('download-area').innerHTML = `
+              <a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853;">
+                <span class="material-symbols-outlined">download</span> ${data.fileName} を保存する
+              </a>
+            `;
             showStatus('受信完了！', 'ファイルを受け取りました。', true);
           }
         });
@@ -367,24 +375,24 @@
       conn.on('data', data => {
         if (data.type === 'auth-success') {
           txPinModal.style.display = 'none';
-          stopQrScanner();
-          txQrModal.style.display = 'none';
-          
-          showStatus('送信中...', 'ファイルを転送しています');
-          conn.send({
-            type: 'file-transfer',
-            file: selectedFile,
-            fileName: selectedFile.name,
-            fileType: selectedFile.type
+          stopQrScanner().then(() => {
+            txQrModal.style.display = 'none';
+            showStatus('送信中...', 'ファイルを転送しています');
+            conn.send({
+              type: 'file-transfer',
+              file: selectedFile,
+              fileName: selectedFile.name,
+              fileType: selectedFile.type
+            });
+            showStatus('送信完了！', 'ファイルの転送が正常に完了しました。', true);
           });
-          showStatus('送信完了！', 'ファイルの転送が正常に完了しました。', true);
         } else if (data.type === 'auth-fail') {
           alert('PIN（認証コード）が一致しません。もう一度お試しください。');
         }
       });
     }
 
-    // PIN認証画面
+    // PIN認証
     document.getElementById('btn-open-pin-modal').addEventListener('click', () => {
       txChoiceModal.style.display = 'none';
       txPinModal.style.display = 'flex';
@@ -399,16 +407,17 @@
       conn.send({ type: 'verify-pin', pin: pin });
     });
 
-    // QRスキャナー画面
+    // QRスキャナー制御
     document.getElementById('btn-open-qr-modal').addEventListener('click', () => {
       txChoiceModal.style.display = 'none';
       txQrModal.style.display = 'flex';
       startQrScanner();
     });
     document.getElementById('tx-qr-close-btn').addEventListener('click', () => {
-      stopQrScanner();
-      txQrModal.style.display = 'none';
-      txChoiceModal.style.display = 'flex';
+      stopQrScanner().then(() => {
+        txQrModal.style.display = 'none';
+        txChoiceModal.style.display = 'flex';
+      });
     });
 
     document.getElementById('btn-cancel-tx').addEventListener('click', () => {
@@ -416,23 +425,39 @@
       if (conn) conn.close();
     });
 
+    // QRスキャナー開始
     function startQrScanner() {
+      const qrRegion = document.getElementById("qr-reader");
+      qrRegion.innerHTML = "";
       html5QrCode = new Html5Qrcode("qr-reader");
+      
       html5QrCode.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: 200 },
+        { fps: 10, qrbox: { width: 220, height: 220 } },
         (decodedText) => {
-          stopQrScanner();
-          conn.send({ type: 'verify-pin', pin: decodedText });
+          // スキャン成功時：カメラを停止してからPIN検証を実行
+          stopQrScanner().then(() => {
+            txQrModal.style.display = 'none';
+            showStatus('認証確認中...', '読み取ったコードを検証しています');
+            if (conn && conn.open) {
+              conn.send({ type: 'verify-pin', pin: decodedText.trim() });
+            }
+          });
         },
         () => {}
-      ).catch(err => alert("カメラの起動に失敗しました: " + err));
+      ).catch(err => alert("カメラの起動に失敗しました。カメラパーミッションを確認してください: " + err));
     }
 
+    // QRスキャナー安全停止（Promise）
     function stopQrScanner() {
       if (html5QrCode) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch(()=>{});
+        const instance = html5QrCode;
+        html5QrCode = null;
+        return instance.stop().then(() => {
+          instance.clear();
+        }).catch(() => {});
       }
+      return Promise.resolve();
     }
 
     function showStatus(title, msg, canClose = false) {
