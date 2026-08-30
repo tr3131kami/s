@@ -8,6 +8,7 @@
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
 
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 
@@ -73,7 +74,7 @@
     .device-item {
       display: flex; align-items: center; justify-content: space-between;
       padding: 14px; border: 1px solid #dadce0; border-radius: 8px; margin-bottom: 8px;
-      cursor: pointer; transition: background 0.2s;
+      cursor: pointer; transition: all 0.2s;
     }
     .device-item:hover { background-color: #e8f0fe; border-color: var(--primary-color); }
     .device-info { display: flex; align-items: center; gap: 10px; font-weight: 500; }
@@ -118,12 +119,10 @@
       </div>
 
       <div class="card">
-        <h3><span class="material-symbols-outlined">devices</span> 2. 送信先のデバイスを選択</h3>
-        <p style="font-size:13px; color:#5f6368; margin-top:0;">「受信する」を開いている近くのデバイス:</p>
+        <h3><span class="material-symbols-outlined">devices</span> 2. 「受信する」を開いているデバイスを選択</h3>
         <ul class="device-list" id="device-list">
           <li style="text-align:center; color:#80868b; padding:15px;">探しています...</li>
         </ul>
-        <button class="btn btn-secondary" id="refresh-devices-btn"><span class="material-symbols-outlined">refresh</span> デバイス一覧を更新</button>
       </div>
     </div>
 
@@ -203,7 +202,11 @@
     let selectedFile = null;
     let generatedPin = '';
     let html5QrCode = null;
-    let activeDevices = {}; // オンラインの受信デバイス一覧 { peerId: deviceName }
+    let activeDevices = {}; // オンラインの受信デバイス一覧 { peerId: { name, lastSeen } }
+    let isReceiveMode = false;
+
+    const MQTT_TOPIC = 'p2p_share_global_lobby_v2';
+    const mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
 
     // --- DOM要素 ---
     const panelSend = document.getElementById('panel-send');
@@ -223,16 +226,19 @@
     // 初期設定
     document.getElementById('device-name-input').value = myDeviceName;
     initPeer();
+    initMqttLobby();
 
-    // --- 1. タブ切り替え（シンプル表示切り替え） ---
+    // --- 1. タブ切り替え ---
     tabSend.addEventListener('click', () => {
       panelSend.style.display = 'block'; panelReceive.style.display = 'none';
       tabSend.classList.add('active'); tabReceive.classList.remove('active');
+      isReceiveMode = false;
     });
     tabReceive.addEventListener('click', () => {
       panelSend.style.display = 'none'; panelReceive.style.display = 'block';
       tabReceive.classList.add('active'); tabSend.classList.remove('active');
-      announcePresence(); // 受信モードに入ったことを周知
+      isReceiveMode = true;
+      sendPresenceSignal(); // 即座に待機シグナルを送信
     });
 
     // --- 2. 設定モーダル ---
@@ -241,70 +247,40 @@
       myDeviceName = document.getElementById('device-name-input').value.trim() || '自分のデバイス';
       localStorage.setItem('app_device_name', myDeviceName);
       settingsModal.style.display = 'none';
-      announcePresence();
+      if (isReceiveMode) sendPresenceSignal();
     });
 
-    // --- 3. PeerJS & デバイス検出ネットワーク ---
-    function initPeer() {
-      // ランダムプレフィックスでPeerID作成
-      myPeerId = 'share-dev-' + Math.floor(Math.random() * 899999 + 100000);
-      peer = new Peer(myPeerId);
-
-      peer.on('open', id => {
-        myPeerId = id;
-        startDiscoveryBroadcast();
+    // --- 3. MQTT公開ロビー (受信中端末の自動一覧化) ---
+    function initMqttLobby() {
+      mqttClient.on('connect', () => {
+        mqttClient.subscribe(MQTT_TOPIC);
       });
 
-      // 接続要求を受けたとき（受信側）
-      peer.on('connection', connection => {
-        conn = connection;
-        conn.on('data', data => {
-          if (data.type === 'request-share') {
-            // 送信側から選択されたら、PIN生成＆QRコードを生成して受信側モーダルを表示
-            generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
-            document.getElementById('rx-requester-name').textContent = data.deviceName || '未知のデバイス';
-            document.getElementById('rx-passcode').textContent = generatedPin;
-            
-            document.getElementById('qrcode').innerHTML = '';
-            new QRCode(document.getElementById('qrcode'), { text: generatedPin, width: 140, height: 140 });
-
-            rxAuthModal.style.display = 'flex';
-          } else if (data.type === 'verify-pin') {
-            // PIN検証
-            if (data.pin === generatedPin) {
-              rxAuthModal.style.display = 'none';
-              conn.send({ type: 'auth-success' });
-              showStatus('接続中', '送信者からファイルを受け取っています...');
-            } else {
-              conn.send({ type: 'auth-fail' });
-            }
-          } else if (data.type === 'file-transfer') {
-            // ファイル受信完了
-            const blob = new Blob([data.file], { type: data.fileType });
-            const url = URL.createObjectURL(blob);
-            document.getElementById('download-area').innerHTML = `<a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853;">💾 ${data.fileName} を保存する</a>`;
-            showStatus('受信完了！', 'ファイルを受け取りました。', true);
+      mqttClient.on('message', (topic, message) => {
+        try {
+          const data = JSON.parse(message.toString());
+          if (data.id && data.id !== myPeerId) {
+            activeDevices[data.id] = { name: data.name, lastSeen: Date.now() };
+            renderDeviceList();
           }
-        });
+        } catch (e) {}
       });
+
+      // 2秒ごとに「受信中」のシグナル送信 ＆ 期限切れデバイス削除
+      setInterval(() => {
+        if (isReceiveMode) sendPresenceSignal();
+        renderDeviceList();
+      }, 2000);
     }
 
-    // デバイス検出のブロードキャスト（疑似ローカル探索）
-    const bc = new BroadcastChannel('p2p_share_channel');
-    function announcePresence() {
-      if (panelReceive.style.display !== 'none') {
-        bc.postMessage({ type: 'announce', id: myPeerId, name: myDeviceName });
+    function sendPresenceSignal() {
+      if (myPeerId && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC, JSON.stringify({
+          id: myPeerId,
+          name: myDeviceName,
+          timestamp: Date.now()
+        }));
       }
-    }
-
-    function startDiscoveryBroadcast() {
-      setInterval(announcePresence, 2000); // 2秒ごとに存在をアナウンス
-      bc.onmessage = e => {
-        if (e.data.type === 'announce' && e.data.id !== myPeerId) {
-          activeDevices[e.data.id] = { name: e.data.name, lastSeen: Date.now() };
-          renderDeviceList();
-        }
-      };
     }
 
     // デバイス一覧描画
@@ -314,7 +290,7 @@
       let count = 0;
 
       for (const [id, dev] of Object.entries(activeDevices)) {
-        if (now - dev.lastSeen < 6000) { // 6秒以内に応答のあったデバイス
+        if (now - dev.lastSeen < 6000) { // 6秒以内にシグナルがあったデバイスのみ表示
           count++;
           const li = document.createElement('li');
           li.className = 'device-item';
@@ -331,18 +307,51 @@
       }
 
       if (count === 0) {
-        deviceListEl.innerHTML = '<li style="text-align:center; color:#80868b; padding:15px;">近くに受信待機中のデバイスがありません</li>';
+        deviceListEl.innerHTML = '<li style="text-align:center; color:#80868b; padding:15px;">「受信する」を開いているデバイスを探しています...</li>';
       }
     }
 
-    document.getElementById('refresh-devices-btn').addEventListener('click', () => {
-      announcePresence(); renderDeviceList();
-    });
+    // --- 4. PeerJS WebRTC通信 ---
+    function initPeer() {
+      myPeerId = 'share-dev-' + Math.floor(Math.random() * 899999 + 100000);
+      peer = new Peer(myPeerId);
 
-    // --- 4. 送信側の処理フロー ---
+      // 受信側として接続要求を受け取ったとき
+      peer.on('connection', connection => {
+        conn = connection;
+        conn.on('data', data => {
+          if (data.type === 'request-share') {
+            // PIN & QRコード生成
+            generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
+            document.getElementById('rx-requester-name').textContent = data.deviceName || '未知のデバイス';
+            document.getElementById('rx-passcode').textContent = generatedPin;
+            
+            document.getElementById('qrcode').innerHTML = '';
+            new QRCode(document.getElementById('qrcode'), { text: generatedPin, width: 140, height: 140 });
+
+            rxAuthModal.style.display = 'flex';
+          } else if (data.type === 'verify-pin') {
+            if (data.pin === generatedPin) {
+              rxAuthModal.style.display = 'none';
+              conn.send({ type: 'auth-success' });
+              showStatus('接続完了', '送信者からファイルを受信しています...');
+            } else {
+              conn.send({ type: 'auth-fail' });
+            }
+          } else if (data.type === 'file-transfer') {
+            // ファイル受け取り
+            const blob = new Blob([data.file], { type: data.fileType });
+            const url = URL.createObjectURL(blob);
+            document.getElementById('download-area').innerHTML = `<a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853;">💾 ${data.fileName} を保存する</a>`;
+            showStatus('受信完了！', 'ファイルを受け取りました。', true);
+          }
+        });
+      });
+    }
+
+    // --- 5. 送信側の操作 ---
     sendFileInput.addEventListener('change', e => { selectedFile = e.target.files[0]; });
 
-    // デバイスがタップされた時
     function selectTargetDevice(targetId) {
       if (!selectedFile) return alert('先に送信するファイルを選択してください');
 
@@ -352,7 +361,7 @@
       conn.on('open', () => {
         conn.send({ type: 'request-share', deviceName: myDeviceName });
         statusModal.style.display = 'none';
-        txChoiceModal.style.display = 'flex'; // 認証方法選択モーダルを開く
+        txChoiceModal.style.display = 'flex';
       });
 
       conn.on('data', data => {
@@ -370,13 +379,12 @@
           });
           showStatus('送信完了！', 'ファイルの転送が正常に完了しました。', true);
         } else if (data.type === 'auth-fail') {
-          alert('PIN（認証コード）が一致しません。やり直してください。');
+          alert('PIN（認証コード）が一致しません。もう一度お試しください。');
         }
       });
     }
 
-    // --- 5. 送信側：モーダル選択 & 認証処理 ---
-    // (A) PIN入力モーダルを開く
+    // PIN認証画面
     document.getElementById('btn-open-pin-modal').addEventListener('click', () => {
       txChoiceModal.style.display = 'none';
       txPinModal.style.display = 'flex';
@@ -385,45 +393,39 @@
       txPinModal.style.display = 'none';
       txChoiceModal.style.display = 'flex';
     });
-
-    // PIN認証を実行
     document.getElementById('tx-pin-submit-btn').addEventListener('click', () => {
       const pin = document.getElementById('tx-pin-input').value.trim();
       if (pin.length !== 6) return alert('6桁のPINを入力してください');
       conn.send({ type: 'verify-pin', pin: pin });
     });
 
-    // (B) QRスキャナーモーダルを開く
+    // QRスキャナー画面
     document.getElementById('btn-open-qr-modal').addEventListener('click', () => {
       txChoiceModal.style.display = 'none';
       txQrModal.style.display = 'flex';
       startQrScanner();
     });
-
     document.getElementById('tx-qr-close-btn').addEventListener('click', () => {
       stopQrScanner();
       txQrModal.style.display = 'none';
       txChoiceModal.style.display = 'flex';
     });
 
-    // キャンセルボタン
     document.getElementById('btn-cancel-tx').addEventListener('click', () => {
       txChoiceModal.style.display = 'none';
       if (conn) conn.close();
     });
 
-    // QRスキャナー起動
     function startQrScanner() {
       html5QrCode = new Html5Qrcode("qr-reader");
       html5QrCode.start(
         { facingMode: "environment" },
         { fps: 10, qrbox: 200 },
         (decodedText) => {
-          // QRコード読み取り成功時
           stopQrScanner();
           conn.send({ type: 'verify-pin', pin: decodedText });
         },
-        (errorMessage) => {}
+        () => {}
       ).catch(err => alert("カメラの起動に失敗しました: " + err));
     }
 
@@ -433,7 +435,6 @@
       }
     }
 
-    // ステータス表示補助関数
     function showStatus(title, msg, canClose = false) {
       document.getElementById('status-title').textContent = title;
       document.getElementById('status-msg').textContent = msg;
