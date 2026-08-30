@@ -7,6 +7,7 @@
 
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 
@@ -23,10 +24,10 @@
       background-color: var(--bg-color);
       color: var(--text-color);
       margin: 0; padding: 0;
-      display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+      display: flex; flex-direction: column; min-height: 100vh;
     }
 
-    /* ヘッダー & 設定アイコン */
+    /* ヘッダー */
     header {
       display: flex; justify-content: space-between; align-items: center;
       padding: 12px 20px; background: white; border-bottom: 1px solid #dadce0;
@@ -44,20 +45,12 @@
     }
     .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
 
-    /* スワイプエリア (メインコンテンツ) */
-    .swipe-container {
-      flex: 1; display: flex; width: 200vw; transition: transform 0.3s ease-out;
-    }
-    .tab-content {
-      width: 100vw; padding: 20px; box-sizing: border-box; overflow-y: auto;
-      display: flex; flex-direction: column; align-items: center;
-    }
+    /* メインコンテンツエリア */
+    main { flex: 1; padding: 20px; max-width: 500px; width: 100%; margin: 0 auto; box-sizing: border-box; }
 
-    /* カード・UIパーツ */
     .card {
       background: var(--card-bg); border-radius: 12px; padding: 20px;
-      width: 100%; max-width: 480px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      margin-bottom: 16px; box-sizing: border-box;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; box-sizing: border-box;
     }
     .card h3 { margin-top: 0; font-size: 1.05rem; color: #3c4043; display: flex; align-items: center; gap: 8px; }
 
@@ -65,20 +58,32 @@
       width: 100%; padding: 12px; margin: 8px 0 16px; border: 1px solid #dadce0;
       border-radius: 8px; box-sizing: border-box; font-size: 15px;
     }
-    
+
     .btn {
       width: 100%; padding: 12px; border: none; border-radius: 8px;
       background: var(--primary-color); color: white; font-size: 15px; font-weight: 500;
-      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px;
     }
+    .btn-secondary { background: #f1f3f4; color: #3c4043; }
+    .btn-secondary:hover { background: #e8eaed; }
     .btn:disabled { background: #dadce0; cursor: not-allowed; }
 
-    /* ローディング（受信準備中）アニメーション */
-    .spinner-box { text-align: center; padding: 30px 0; }
+    /* デバイス選択リスト */
+    .device-list { list-style: none; padding: 0; margin: 10px 0; }
+    .device-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px; border: 1px solid #dadce0; border-radius: 8px; margin-bottom: 8px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .device-item:hover { background-color: #e8f0fe; border-color: var(--primary-color); }
+    .device-info { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+
+    /* ローディング表示 */
+    .spinner-box { text-align: center; padding: 20px 0; }
     .spinner {
-      width: 40px; height: 40px; border: 4px solid #f3f3f3;
+      width: 36px; height: 36px; border: 4px solid #f3f3f3;
       border-top: 4px solid var(--primary-color); border-radius: 50%;
-      animation: spin 1s linear infinite; margin: 0 auto 15px;
+      animation: spin 1s linear infinite; margin: 0 auto 12px;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -87,16 +92,17 @@
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
       background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000;
     }
-    .modal-card { background: white; padding: 24px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; }
+    .modal-card { background: white; padding: 24px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     .passcode-display { font-size: 32px; font-weight: bold; letter-spacing: 6px; color: var(--primary-color); margin: 10px 0; }
     #qrcode { display: flex; justify-content: center; margin: 15px 0; }
+    #qr-reader { width: 100%; margin-top: 10px; }
   </style>
 </head>
 <body>
 
   <header>
     <h1><span class="material-symbols-outlined">folder_shared</span> ファイル共有</h1>
-    <button class="icon-btn" id="open-settings-btn"><span class="material-symbols-outlined">settings</span></button>
+    <button class="icon-btn" id="open-settings-btn" title="設定"><span class="material-symbols-outlined">settings</span></button>
   </header>
 
   <div class="tabs">
@@ -104,32 +110,33 @@
     <button class="tab-btn" id="tab-receive">受信する</button>
   </div>
 
-  <div class="swipe-container" id="swipe-container">
-    
-    <div class="tab-content" id="panel-send">
+  <main>
+    <div id="panel-send">
       <div class="card">
         <h3><span class="material-symbols-outlined">attach_file</span> 1. ファイルを選択</h3>
         <input type="file" id="send-file-input">
       </div>
 
       <div class="card">
-        <h3><span class="material-symbols-outlined">devices</span> 2. 相手のID/デバイス指定</h3>
-        <input type="text" id="target-peer-id" placeholder="相手のIDを入力">
-        <button class="btn" id="request-conn-btn" disabled><span class="material-symbols-outlined">sensors</span> 接続リクエストを送信</button>
+        <h3><span class="material-symbols-outlined">devices</span> 2. 送信先のデバイスを選択</h3>
+        <p style="font-size:13px; color:#5f6368; margin-top:0;">「受信する」を開いている近くのデバイス:</p>
+        <ul class="device-list" id="device-list">
+          <li style="text-align:center; color:#80868b; padding:15px;">探しています...</li>
+        </ul>
+        <button class="btn btn-secondary" id="refresh-devices-btn"><span class="material-symbols-outlined">refresh</span> デバイス一覧を更新</button>
       </div>
     </div>
 
-    <div class="tab-content" id="panel-receive">
+    <div id="panel-receive" style="display: none;">
       <div class="card">
-        <div class="spinner-box" id="rx-waiting-box">
+        <div class="spinner-box">
           <div class="spinner"></div>
-          <p>受信準備中...</p>
-          <small style="color: #70757a;">リクエストを待機しています</small>
+          <p style="font-weight:bold; margin-bottom:4px;">受信準備中...</p>
+          <small style="color: #70757a;">送信側からのリクエストを待っています</small>
         </div>
       </div>
     </div>
-
-  </div>
+  </main>
 
   <div class="modal-overlay" id="settings-modal">
     <div class="modal-card">
@@ -142,203 +149,301 @@
 
   <div class="modal-overlay" id="rx-auth-modal">
     <div class="modal-card">
-      <h3><span class="material-symbols-outlined">lock_open</span> 接続リクエスト受信</h3>
-      <p><strong id="rx-requester-name">未知のデバイス</strong> からリクエストが届きました。</p>
-      <p style="font-size: 14px; color: #5f6368; margin-bottom:0;">送信側に以下のコードを入力させるかQRを読み取らせてください：</p>
+      <h3><span class="material-symbols-outlined">verified_user</span> 認証の要求</h3>
+      <p><strong id="rx-requester-name">送信者</strong> からファイル送信リクエストです。</p>
+      <p style="font-size: 13px; color: #5f6368; margin-bottom:0;">相手に以下のPINを伝えるか、QRコードをスキャンさせてください：</p>
       <div class="passcode-display" id="rx-passcode">------</div>
       <div id="qrcode"></div>
-      <button class="btn" style="background:#ea4335;" id="rx-cancel-btn">拒否 / キャンセル</button>
     </div>
   </div>
 
-  <div class="modal-overlay" id="tx-auth-modal">
+  <div class="modal-overlay" id="tx-choice-modal">
     <div class="modal-card">
-      <h3><span class="material-symbols-outlined">pin</span> 認証パスコードの入力</h3>
-      <p>相手の画面に表示されている 6桁のパスコード を入力してください：</p>
-      <input type="text" id="tx-passcode-input" maxlength="6" placeholder="6桁の数字">
-      <button class="btn" id="tx-auth-submit-btn">認証して送信開始</button>
+      <h3><span class="material-symbols-outlined">lock</span> 認証方法の選択</h3>
+      <p>相手の画面に表示されている情報を使って認証してください：</p>
+      <button class="btn" id="btn-open-pin-modal"><span class="material-symbols-outlined">pin</span> PIN（パスワード）を入力</button>
+      <button class="btn btn-secondary" id="btn-open-qr-modal"><span class="material-symbols-outlined">qr_code_scanner</span> QRコードを読み取る</button>
+      <button class="btn btn-secondary" id="btn-cancel-tx" style="margin-top:15px; background:none; color:#ea4335;">キャンセル</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="tx-pin-modal">
+    <div class="modal-card">
+      <h3><span class="material-symbols-outlined">pin</span> PINの入力</h3>
+      <p>相手の画面に表示されている 6桁の数字 を入力してください：</p>
+      <input type="text" id="tx-pin-input" maxlength="6" placeholder="例: 123456" style="text-align:center; font-size:20px; letter-spacing:4px;">
+      <button class="btn" id="tx-pin-submit-btn">認証して送信開始</button>
+      <button class="btn btn-secondary" id="tx-pin-back-btn">戻る</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="tx-qr-modal">
+    <div class="modal-card">
+      <h3><span class="material-symbols-outlined">qr_code_scanner</span> QRコードの読み取り</h3>
+      <div id="qr-reader"></div>
+      <button class="btn btn-secondary" id="tx-qr-close-btn" style="margin-top:10px;">閉じる</button>
     </div>
   </div>
 
   <div class="modal-overlay" id="status-modal">
     <div class="modal-card">
-      <h3 id="status-title">処理中</h3>
-      <p id="status-msg">通信を実行しています...</p>
+      <h3 id="status-title">送信中</h3>
+      <p id="status-msg">ファイルを送信しています...</p>
       <div id="download-area"></div>
       <button class="btn" id="status-close-btn" style="display:none; margin-top:15px;">閉じる</button>
     </div>
   </div>
 
   <script>
-    // --- グローバル状態管理 ---
+    // --- グローバル変数 ---
     let myDeviceName = localStorage.getItem('app_device_name') || '自分のデバイス';
+    let myPeerId = '';
     let peer = null;
     let conn = null;
     let selectedFile = null;
-    let generatedPasscode = '';
+    let generatedPin = '';
+    let html5QrCode = null;
+    let activeDevices = {}; // オンラインの受信デバイス一覧 { peerId: deviceName }
 
     // --- DOM要素 ---
-    const swipeContainer = document.getElementById('swipe-container');
+    const panelSend = document.getElementById('panel-send');
+    const panelReceive = document.getElementById('panel-receive');
     const tabSend = document.getElementById('tab-send');
     const tabReceive = document.getElementById('tab-receive');
-    
-    const settingsModal = document.getElementById('settings-modal');
-    const deviceNameInput = document.getElementById('device-name-input');
-    
+    const deviceListEl = document.getElementById('device-list');
     const sendFileInput = document.getElementById('send-file-input');
-    const targetPeerIdInput = document.getElementById('target-peer-id');
-    const requestConnBtn = document.getElementById('request-conn-btn');
 
+    const settingsModal = document.getElementById('settings-modal');
     const rxAuthModal = document.getElementById('rx-auth-modal');
-    const rxRequesterName = document.getElementById('rx-requester-name');
-    const rxPasscode = document.getElementById('rx-passcode');
-    const qrcodeEl = document.getElementById('qrcode');
-
-    const txAuthModal = document.getElementById('tx-auth-modal');
-    const txPasscodeInput = document.getElementById('tx-passcode-input');
-
+    const txChoiceModal = document.getElementById('tx-choice-modal');
+    const txPinModal = document.getElementById('tx-pin-modal');
+    const txQrModal = document.getElementById('tx-qr-modal');
     const statusModal = document.getElementById('status-modal');
-    const statusTitle = document.getElementById('status-title');
-    const statusMsg = document.getElementById('status-msg');
-    const downloadArea = document.getElementById('download-area');
-    const statusCloseBtn = document.getElementById('status-close-btn');
 
-    // 初期化
-    deviceNameInput.value = myDeviceName;
+    // 初期設定
+    document.getElementById('device-name-input').value = myDeviceName;
     initPeer();
 
-    // --- 1. タブ切り替え & スワイプ機能 ---
-    function switchTab(index) {
-      if (index === 0) {
-        swipeContainer.style.transform = 'translateX(0vw)';
-        tabSend.classList.add('active'); tabReceive.classList.remove('active');
-      } else {
-        swipeContainer.style.transform = 'translateX(-100vw)';
-        tabReceive.classList.add('active'); tabSend.classList.remove('active');
-      }
-    }
-    tabSend.addEventListener('click', () => switchTab(0));
-    tabReceive.addEventListener('click', () => switchTab(1));
-
-    // タッチスワイプ処理
-    let startX = 0;
-    swipeContainer.addEventListener('touchstart', e => { startX = e.touches[0].clientX; });
-    swipeContainer.addEventListener('touchend', e => {
-      let diffX = startX - e.changedTouches[0].clientX;
-      if (diffX > 50) switchTab(1); // 左スワイプ -> 受信へ
-      else if (diffX < -50) switchTab(0); // 右スワイプ -> 送信へ
+    // --- 1. タブ切り替え（シンプル表示切り替え） ---
+    tabSend.addEventListener('click', () => {
+      panelSend.style.display = 'block'; panelReceive.style.display = 'none';
+      tabSend.classList.add('active'); tabReceive.classList.remove('active');
+    });
+    tabReceive.addEventListener('click', () => {
+      panelSend.style.display = 'none'; panelReceive.style.display = 'block';
+      tabReceive.classList.add('active'); tabSend.classList.remove('active');
+      announcePresence(); // 受信モードに入ったことを周知
     });
 
     // --- 2. 設定モーダル ---
     document.getElementById('open-settings-btn').addEventListener('click', () => settingsModal.style.display = 'flex');
     document.getElementById('save-settings-btn').addEventListener('click', () => {
-      myDeviceName = deviceNameInput.value.trim() || '自分のデバイス';
+      myDeviceName = document.getElementById('device-name-input').value.trim() || '自分のデバイス';
       localStorage.setItem('app_device_name', myDeviceName);
       settingsModal.style.display = 'none';
+      announcePresence();
     });
 
-    // --- 3. PeerJSの初期化 ---
+    // --- 3. PeerJS & デバイス検出ネットワーク ---
     function initPeer() {
-      // 自分のIDを生成・表示
-      peer = new Peer();
+      // ランダムプレフィックスでPeerID作成
+      myPeerId = 'share-dev-' + Math.floor(Math.random() * 899999 + 100000);
+      peer = new Peer(myPeerId);
+
       peer.on('open', id => {
-        // IDが確定したら、受信側の入力欄等に自分のIDを反映
-        console.log('My Peer ID:', id);
+        myPeerId = id;
+        startDiscoveryBroadcast();
       });
 
-      // 接続要求（受信側としての待機）
+      // 接続要求を受けたとき（受信側）
       peer.on('connection', connection => {
         conn = connection;
         conn.on('data', data => {
           if (data.type === 'request-share') {
-            // 送信側からリクエストが来たら、認証コードを生成して受信側モーダルを表示
-            generatedPasscode = Math.floor(100000 + Math.random() * 900000).toString();
-            rxRequesterName.textContent = data.deviceName || '未知のデバイス';
-            rxPasscode.textContent = generatedPasscode;
+            // 送信側から選択されたら、PIN生成＆QRコードを生成して受信側モーダルを表示
+            generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
+            document.getElementById('rx-requester-name').textContent = data.deviceName || '未知のデバイス';
+            document.getElementById('rx-passcode').textContent = generatedPin;
             
-            // QRコード生成
-            qrcodeEl.innerHTML = '';
-            new QRCode(qrcodeEl, { text: generatedPasscode, width: 128, height: 128 });
-            
+            document.getElementById('qrcode').innerHTML = '';
+            new QRCode(document.getElementById('qrcode'), { text: generatedPin, width: 140, height: 140 });
+
             rxAuthModal.style.display = 'flex';
-          } else if (data.type === 'auth-passcode') {
-            // 送信側からパスコード認証が届いた場合
-            if (data.passcode === generatedPasscode) {
+          } else if (data.type === 'verify-pin') {
+            // PIN検証
+            if (data.pin === generatedPin) {
               rxAuthModal.style.display = 'none';
               conn.send({ type: 'auth-success' });
-              showStatus('接続成功', 'ファイル受信を待機しています...');
+              showStatus('接続中', '送信者からファイルを受け取っています...');
             } else {
               conn.send({ type: 'auth-fail' });
             }
           } else if (data.type === 'file-transfer') {
-            // ファイルの受け取り処理
+            // ファイル受信完了
             const blob = new Blob([data.file], { type: data.fileType });
             const url = URL.createObjectURL(blob);
-            downloadArea.innerHTML = `<a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853; margin-top:10px;">💾 ${data.fileName} をダウンロード</a>`;
+            document.getElementById('download-area').innerHTML = `<a href="${url}" download="${data.fileName}" class="btn" style="background:#34a853;">💾 ${data.fileName} を保存する</a>`;
             showStatus('受信完了！', 'ファイルを受け取りました。', true);
           }
         });
       });
     }
 
-    // --- 4. 送信側の操作 ---
-    sendFileInput.addEventListener('change', e => {
-      selectedFile = e.target.files[0];
-      requestConnBtn.disabled = !selectedFile;
+    // デバイス検出のブロードキャスト（疑似ローカル探索）
+    const bc = new BroadcastChannel('p2p_share_channel');
+    function announcePresence() {
+      if (panelReceive.style.display !== 'none') {
+        bc.postMessage({ type: 'announce', id: myPeerId, name: myDeviceName });
+      }
+    }
+
+    function startDiscoveryBroadcast() {
+      setInterval(announcePresence, 2000); // 2秒ごとに存在をアナウンス
+      bc.onmessage = e => {
+        if (e.data.type === 'announce' && e.data.id !== myPeerId) {
+          activeDevices[e.data.id] = { name: e.data.name, lastSeen: Date.now() };
+          renderDeviceList();
+        }
+      };
+    }
+
+    // デバイス一覧描画
+    function renderDeviceList() {
+      const now = Date.now();
+      deviceListEl.innerHTML = '';
+      let count = 0;
+
+      for (const [id, dev] of Object.entries(activeDevices)) {
+        if (now - dev.lastSeen < 6000) { // 6秒以内に応答のあったデバイス
+          count++;
+          const li = document.createElement('li');
+          li.className = 'device-item';
+          li.innerHTML = `
+            <div class="device-info">
+              <span class="material-symbols-outlined" style="color:var(--primary-color)">smartphone</span>
+              <span>${dev.name}</span>
+            </div>
+            <span class="material-symbols-outlined" style="color:#5f6368">chevron_right</span>
+          `;
+          li.addEventListener('click', () => selectTargetDevice(id));
+          deviceListEl.appendChild(li);
+        }
+      }
+
+      if (count === 0) {
+        deviceListEl.innerHTML = '<li style="text-align:center; color:#80868b; padding:15px;">近くに受信待機中のデバイスがありません</li>';
+      }
+    }
+
+    document.getElementById('refresh-devices-btn').addEventListener('click', () => {
+      announcePresence(); renderDeviceList();
     });
 
-    // 送信リクエスト
-    requestConnBtn.addEventListener('click', () => {
-      const targetId = targetPeerIdInput.value.trim();
-      if (!targetId) return alert('相手のIDを入力してください');
+    // --- 4. 送信側の処理フロー ---
+    sendFileInput.addEventListener('change', e => { selectedFile = e.target.files[0]; });
 
-      showStatus('リクエスト送信中...', '相手の応答を待っています');
+    // デバイスがタップされた時
+    function selectTargetDevice(targetId) {
+      if (!selectedFile) return alert('先に送信するファイルを選択してください');
 
+      showStatus('リクエスト中', '相手の端末に応答を要求しています...');
       conn = peer.connect(targetId);
+
       conn.on('open', () => {
-        // 相手にハンドシェイクを送信
         conn.send({ type: 'request-share', deviceName: myDeviceName });
         statusModal.style.display = 'none';
-        
-        // パスコード入力モーダルを開く
-        txAuthModal.style.display = 'flex';
+        txChoiceModal.style.display = 'flex'; // 認証方法選択モーダルを開く
       });
 
       conn.on('data', data => {
         if (data.type === 'auth-success') {
-          txAuthModal.style.display = 'none';
-          showStatus('認証成功', 'ファイルを送信中...');
+          txPinModal.style.display = 'none';
+          stopQrScanner();
+          txQrModal.style.display = 'none';
           
-          // ファイルデータ送信
+          showStatus('送信中...', 'ファイルを転送しています');
           conn.send({
             type: 'file-transfer',
             file: selectedFile,
             fileName: selectedFile.name,
             fileType: selectedFile.type
           });
-
-          showStatus('送信完了！', 'ファイルの転送が完了しました。', true);
+          showStatus('送信完了！', 'ファイルの転送が正常に完了しました。', true);
         } else if (data.type === 'auth-fail') {
-          alert('パスコードが一致しませんでした。もう一度試してください。');
+          alert('PIN（認証コード）が一致しません。やり直してください。');
         }
       });
+    }
+
+    // --- 5. 送信側：モーダル選択 & 認証処理 ---
+    // (A) PIN入力モーダルを開く
+    document.getElementById('btn-open-pin-modal').addEventListener('click', () => {
+      txChoiceModal.style.display = 'none';
+      txPinModal.style.display = 'flex';
+    });
+    document.getElementById('tx-pin-back-btn').addEventListener('click', () => {
+      txPinModal.style.display = 'none';
+      txChoiceModal.style.display = 'flex';
     });
 
-    // パスコード送信ボタン（送信側）
-    document.getElementById('tx-auth-submit-btn').addEventListener('click', () => {
-      const inputPass = txPasscodeInput.value.trim();
-      if (inputPass.length !== 6) return alert('6桁のコードを入力してください');
-      conn.send({ type: 'auth-passcode', passcode: inputPass });
+    // PIN認証を実行
+    document.getElementById('tx-pin-submit-btn').addEventListener('click', () => {
+      const pin = document.getElementById('tx-pin-input').value.trim();
+      if (pin.length !== 6) return alert('6桁のPINを入力してください');
+      conn.send({ type: 'verify-pin', pin: pin });
     });
+
+    // (B) QRスキャナーモーダルを開く
+    document.getElementById('btn-open-qr-modal').addEventListener('click', () => {
+      txChoiceModal.style.display = 'none';
+      txQrModal.style.display = 'flex';
+      startQrScanner();
+    });
+
+    document.getElementById('tx-qr-close-btn').addEventListener('click', () => {
+      stopQrScanner();
+      txQrModal.style.display = 'none';
+      txChoiceModal.style.display = 'flex';
+    });
+
+    // キャンセルボタン
+    document.getElementById('btn-cancel-tx').addEventListener('click', () => {
+      txChoiceModal.style.display = 'none';
+      if (conn) conn.close();
+    });
+
+    // QRスキャナー起動
+    function startQrScanner() {
+      html5QrCode = new Html5Qrcode("qr-reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 200 },
+        (decodedText) => {
+          // QRコード読み取り成功時
+          stopQrScanner();
+          conn.send({ type: 'verify-pin', pin: decodedText });
+        },
+        (errorMessage) => {}
+      ).catch(err => alert("カメラの起動に失敗しました: " + err));
+    }
+
+    function stopQrScanner() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => html5QrCode.clear()).catch(()=>{});
+      }
+    }
 
     // ステータス表示補助関数
     function showStatus(title, msg, canClose = false) {
-      statusTitle.textContent = title;
-      statusMsg.textContent = msg;
+      document.getElementById('status-title').textContent = title;
+      document.getElementById('status-msg').textContent = msg;
       statusModal.style.display = 'flex';
-      statusCloseBtn.style.display = canClose ? 'block' : 'none';
+      document.getElementById('status-close-btn').style.display = canClose ? 'block' : 'none';
     }
-    statusCloseBtn.addEventListener('click', () => statusModal.style.display = 'none');
+    document.getElementById('status-close-btn').addEventListener('click', () => {
+      statusModal.style.display = 'none';
+      document.getElementById('download-area').innerHTML = '';
+    });
   </script>
 </body>
 </html>
